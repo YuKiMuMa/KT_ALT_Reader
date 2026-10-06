@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KT ALT Reader</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface:        #fcfcfb;
+    --panel:          #f3f3f1;
+    --border:         #d9d8d3;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #85847f;
+    --grid:           #e6e5e0;
+    --series-1:       #2a78d6;  /* 気圧 */
+    --series-2:       #eb6834;  /* BMP温度 */
+    --series-3:       #1baf7a;  /* 高度 */
+    --btn-read:       #2e7d32;
+    --btn-erase:      #c62828;
+    --btn-convert:    #1565c0;
+    --error:          #c62828;
+    --ok:             #2e7d32;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface:        #1a1a19;
+      --panel:          #242423;
+      --border:         #3d3d3a;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #8f8e86;
+      --grid:           #2f2f2d;
+      --series-1:       #3987e5;
+      --series-2:       #d95926;
+      --series-3:       #199e70;
+      --error:          #ef6c6c;
+      --ok:             #66bb6a;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface:        #1a1a19;
+    --panel:          #242423;
+    --border:         #3d3d3a;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #8f8e86;
+    --grid:           #2f2f2d;
+    --series-1:       #3987e5;
+    --series-2:       #d95926;
+    --series-3:       #199e70;
+    --error:          #ef6c6c;
+    --ok:             #66bb6a;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    display: flex; flex-direction: column;
+    margin: 0;
+    background: var(--surface);
+    color: var(--text-primary);
+    font: 14px/1.4 "Segoe UI", "Yu Gothic UI", "Hiragino Sans", sans-serif;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 10px 16px 0;
+  }
+  header h1 { font-size: 17px; margin: 0; }
+  header .sub { color: var(--text-muted); font-size: 12px; }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 8px 16px;
+  }
+  fieldset {
+    border: 1px solid var(--border); border-radius: 6px;
+    margin: 0; padding: 4px 8px 6px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    background: var(--panel);
+  }
+  legend { font-size: 12px; color: var(--text-secondary); padding: 0 4px; }
+  label { color: var(--text-secondary); font-size: 13px; }
+  input[type="text"], input[type="number"] {
+    font: inherit; color: var(--text-primary); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px;
+  }
+  input.num { width: 7em; }
+  input.short { width: 5em; }
+  button {
+    font: inherit; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 4px; padding: 4px 10px;
+    background: var(--surface); color: var(--text-primary);
+  }
+  button:hover:not(:disabled) { filter: brightness(0.95); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { color: #fff; border-color: transparent; font-weight: 600; }
+  button.read    { background: var(--btn-read); }
+  button.erase   { background: var(--btn-erase); }
+  button.convert { background: var(--btn-convert); }
+  #portInfo { color: var(--text-secondary); font-size: 12px; min-width: 9em; }
+  #snBox {
+    font: 700 18px/1.2 Consolas, "Courier New", monospace;
+    width: 13em; text-align: center; letter-spacing: 0.04em;
+  }
+  .spacer { flex: 1; }
+
+  #status {
+    margin: 0 16px; padding: 6px 10px; border-radius: 4px;
+    font-size: 13px; color: var(--text-secondary); background: var(--panel);
+    min-height: 1.4em;
+  }
+  #status.error { color: var(--error); }
+  #status.ok    { color: var(--ok); }
+  #unsupported {
+    display: none; margin: 8px 16px 0; padding: 8px 10px; border-radius: 4px;
+    border: 1px solid var(--error); color: var(--error); font-size: 13px;
+  }
+
+  /* グラフはウィンドウの残りの高さに収める（気圧:温度:高度 = 2:1:2） */
+  #charts { flex: 1; min-height: 520px; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .chart { position: relative; width: 100%; flex: 2 1 0; min-height: 0; }
+  .chart canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #chartT { flex: 1 1 0; }
+
+  #tooltip {
+    position: fixed; pointer-events: none; display: none; z-index: 10;
+    background: var(--surface); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 9px; font-size: 12px; line-height: 1.5;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    font-variant-numeric: tabular-nums;
+  }
+  #tooltip .row { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #tooltip .sw { width: 10px; height: 2px; border-radius: 1px; }
+  #tooltip .k { color: var(--text-secondary); min-width: 4.5em; }
+
+  @media (max-width: 700px) {
+    .toolbar { padding: 8px 16px; }
+    #snBox { width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>KT ALT Reader</h1>
+    <span class="sub">Web版（Chrome / Edge）</span>
+  </header>
+
+  <div id="unsupported">
+    このブラウザは Web Serial API に対応していないため、デバイスの読み出し・消去はできません。
+    Chrome または Edge で開いてください（CSV の表示・変換は使えます）。
+  </div>
+
+  <div class="toolbar">
+    <fieldset>
+      <legend>File</legend>
+      <button id="btnSave">Save CSV</button>
+      <button id="btnOpen">Open CSV</button>
+      <input id="fileInput" type="file" accept=".csv,text/csv" hidden>
+    </fieldset>
+
+    <div class="spacer"></div>
+
+    <fieldset>
+      <legend>Device S/N</legend>
+      <input id="snBox" type="text" value="-" readonly>
+      <button id="btnCopy">Copy</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Connection</legend>
+      <button id="btnPort">Select Port</button>
+      <span id="portInfo">未選択</span>
+      <button id="btnRead" class="primary read">Read Device</button>
+      <button id="btnErase" class="primary erase">Erase Device</button>
+    </fieldset>
+  </div>
+
+  <div class="toolbar">
+    <fieldset>
+      <legend>Altitude Conversion</legend>
+      <label for="tempIn">Outside Temp (°C)</label>
+      <input id="tempIn" class="short" type="text" inputmode="decimal">
+      <label for="refIn">Ref P (hPa)</label>
+      <input id="refIn" class="num" type="text" inputmode="decimal">
+      <button id="btnConvert" class="primary convert">Convert</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Offset (m)</legend>
+      <input id="offsetIn" class="short" type="text" inputmode="decimal" value="0.0">
+      <button id="btnOffset">Apply</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Range (s)</legend>
+      <label for="fromIn">From</label>
+      <input id="fromIn" class="short" type="text" inputmode="decimal">
+      <label for="toIn">To</label>
+      <input id="toIn" class="short" type="text" inputmode="decimal">
+      <button id="btnRange">Apply</button>
+      <button id="btnRangeReset">Reset</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Display</legend>
+      <label><input id="showTemp" type="checkbox" checked> Show BMP Temp</label>
+    </fieldset>
+  </div>
+
+  <div id="status">デバイスを USB で接続し、「Select Port」でポートを選んでください。</div>
+
+  <div id="charts">
+    <div id="chartP" class="chart"></div>
+    <div id="chartT" class="chart"></div>
+    <div id="chartH" class="chart"></div>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
