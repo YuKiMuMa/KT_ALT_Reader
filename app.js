@@ -493,7 +493,9 @@ class Chart {
   }
 
   plotRect() {
-    return { l: this.pad.l, t: this.pad.t, w: this.w - this.pad.l - this.pad.r, h: this.h - this.pad.t - this.pad.b };
+    const l = this.w < 500 ? 52 : this.pad.l;   // 狭い画面では縦軸ラベル幅を詰める
+    const rgt = this.w < 500 ? 8 : this.pad.r;
+    return { l, t: this.pad.t, w: this.w - l - rgt, h: this.h - this.pad.t - this.pad.b };
   }
 
   xOf(i) {
@@ -536,7 +538,11 @@ class Chart {
       const tw = ctx.measureText(`${this.opts.title} (${this.opts.unit})`).width;
       ctx.font = '12px "Segoe UI", sans-serif';
       ctx.fillStyle = textSecondary;
-      ctx.fillText(this.subtitle, r.l + tw + 12, 16);
+      // 入りきらないときは "T=" などの項目名を省いて短くする
+      const room = this.w - (r.l + tw + 12) - 4;
+      let sub = this.subtitle;
+      if (ctx.measureText(sub).width > room) sub = sub.replace(/\w+=/g, '');
+      ctx.fillText(sub, r.l + tw + 12, 16, Math.max(room, 10));
     }
 
     // 表示範囲の最小・最大（NaN は除く）
@@ -682,7 +688,7 @@ const charts = {
 };
 
 // --- ホバー: 全グラフに十字線、カーソル付近に値を表示 ---
-function showTooltip(idx, clientX, clientY) {
+function showTooltip(idx, clientX, clientY, touch = false) {
   const tip = $('tooltip');
   const row = (color, k, v) =>
     `<div class="row">${color ? `<span class="sw" style="background:var(${color})"></span>` : '<span class="sw"></span>'}<span class="k">${k}</span><span>${v}</span></div>`;
@@ -697,8 +703,15 @@ function showTooltip(idx, clientX, clientY) {
   tip.style.display = 'block';
   const tw = tip.offsetWidth, th = tip.offsetHeight;
   let x = clientX + 16, y = clientY + 16;
-  if (x + tw > window.innerWidth - 8) x = clientX - tw - 16;
-  if (y + th > window.innerHeight - 8) y = clientY - th - 16;
+  if (touch) {
+    // 指で隠れないように、タッチ位置の上側・左右中央寄せで出す
+    x = Math.min(Math.max(8, clientX - tw / 2), window.innerWidth - tw - 8);
+    y = clientY - th - 28;
+    if (y < 8) y = clientY + 28;
+  } else {
+    if (x + tw > window.innerWidth - 8) x = clientX - tw - 16;
+    if (y + th > window.innerHeight - 8) y = clientY - th - 16;
+  }
   tip.style.left = `${x}px`;
   tip.style.top = `${y}px`;
 }
@@ -708,16 +721,23 @@ function hideCursor() {
   $('tooltip').style.display = 'none';
 }
 
+// マウスは乗せるだけ、タッチはタップ／横になぞると値を表示する
 for (const c of Object.values(charts)) {
-  c.overlay.addEventListener('mousemove', (e) => {
+  const onPointer = (e) => {
     if (!state.pressures.length) return hideCursor();
     const idx = c.idxAt(e.offsetX);
     if (idx === null) return hideCursor();
     for (const other of Object.values(charts)) other.drawCursor(idx);
-    showTooltip(idx, e.clientX, e.clientY);
-  });
-  c.overlay.addEventListener('mouseleave', hideCursor);
+    showTooltip(idx, e.clientX, e.clientY, e.pointerType !== 'mouse');
+  };
+  c.overlay.addEventListener('pointermove', onPointer);
+  c.overlay.addEventListener('pointerdown', onPointer);
+  c.overlay.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hideCursor(); });
 }
+// タッチ操作ではグラフ以外の場所をタップしたら消す
+document.addEventListener('pointerdown', (e) => {
+  if (e.pointerType !== 'mouse' && !e.target.closest('.chart')) hideCursor();
+});
 
 // ダークモード切替時は色を読み直して再描画
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {

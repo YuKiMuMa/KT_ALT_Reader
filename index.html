@@ -81,6 +81,7 @@
     margin: 0; padding: 4px 8px 6px;
     display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
     background: var(--panel);
+    min-inline-size: 0;  /* 既定の min-content だと狭い画面で縮まずはみ出す */
   }
   legend { font-size: 12px; color: var(--text-secondary); padding: 0 4px; }
   label { color: var(--text-secondary); font-size: 13px; }
@@ -107,6 +108,7 @@
     width: 13em; text-align: center; letter-spacing: 0.04em;
   }
   .spacer { flex: 1; }
+  .pair { display: inline-flex; align-items: center; gap: 6px; }
 
   #status {
     margin: 0 16px; padding: 6px 10px; border-radius: 4px;
@@ -123,7 +125,7 @@
   /* グラフはウィンドウの残りの高さに収める（気圧:温度:高度 = 2:1:2） */
   #charts { flex: 1; min-height: 520px; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 6px; }
   .chart { position: relative; width: 100%; flex: 2 1 0; min-height: 0; }
-  .chart canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .chart canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: pan-y; }
   #chartT { flex: 1 1 0; }
 
   #tooltip {
@@ -138,9 +140,28 @@
   #tooltip .sw { width: 10px; height: 2px; border-radius: 1px; }
   #tooltip .k { color: var(--text-secondary); min-width: 4.5em; }
 
+  /* スマートフォン: 各欄を1行ずつ並べ、グラフは固定の高さで縦にスクロール */
   @media (max-width: 700px) {
-    .toolbar { padding: 8px 16px; }
-    #snBox { width: 100%; }
+    html, body { height: auto; }
+    header { flex-wrap: wrap; row-gap: 0; }
+    .toolbar { padding: 6px 16px; gap: 6px; }
+    .toolbar fieldset { flex: 1 1 100%; }
+    .spacer { display: none; }
+    #snBox { flex: 1; width: auto; min-width: 0; font-size: 16px; }
+    /* Connection: 1行目 [Select Port][ポート情報]、2行目 [Read][Erase] */
+    #portInfo { flex: 1 1 calc(100% - 120px); min-width: 0; }
+    button.read, button.erase { flex: 1 1 0; }
+    /* Altitude Conversion: ラベルと入力欄は必ず同じ行、Convert は最後の行に全幅 */
+    .pair { flex: 1 1 100%; min-width: 0; }
+    .pair label { flex: none; width: 9.5em; white-space: nowrap; }
+    button.convert { flex: 1 1 100%; }
+    input[type="text"] { font-size: 16px; }  /* iOS/Android で入力時に拡大されないように */
+    input.short, input.num { flex: 1; min-width: 4em; }
+    button { padding: 6px 10px; }
+    #charts { flex: none; min-height: 0; }
+    .chart { flex: none; }
+    #chartP, #chartH { height: 260px; }
+    #chartT { flex: none; height: 140px; }
   }
 </style>
 </head>
@@ -183,10 +204,14 @@
   <div class="toolbar">
     <fieldset>
       <legend>Altitude Conversion</legend>
-      <label for="tempIn">Outside Temp (°C)</label>
-      <input id="tempIn" class="short" type="text" inputmode="decimal">
-      <label for="refIn">Ref P (hPa)</label>
-      <input id="refIn" class="num" type="text" inputmode="decimal">
+      <span class="pair">
+        <label for="tempIn">Outside Temp (°C)</label>
+        <input id="tempIn" class="short" type="text" inputmode="decimal">
+      </span>
+      <span class="pair">
+        <label for="refIn">Ref P (hPa)</label>
+        <input id="refIn" class="num" type="text" inputmode="decimal">
+      </span>
       <button id="btnConvert" class="primary convert">Convert</button>
     </fieldset>
 
