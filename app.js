@@ -143,11 +143,35 @@ async function withPort(fn) {
   }
 }
 
+// Android の Chrome は USB シリアルを Web Serial で列挙できない端末が多いため、
+// WebUSB 上で USB CDC-ACM を扱う Google の web-serial-polyfill を使う
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
+let serialApi = null;      // navigator.serial または polyfill の serial
+let usingPolyfill = false;
+
+async function initSerialApi() {
+  if ('serial' in navigator && !IS_ANDROID) {
+    serialApi = navigator.serial;
+  } else if ('usb' in navigator) {
+    try {
+      serialApi = (await import('./vendor/web-serial-polyfill.js')).serial;
+      usingPolyfill = true;
+    } catch (e) {
+      serialApi = null;
+    }
+  }
+}
+
+// polyfill 経由なら USB ディスクリプタのシリアル番号を直接読める
+function usbSerialNumberOf(p) {
+  return (p && p.device_ && p.device_.serialNumber) || null;
+}
+
 function describePort(p) {
   const info = p.getInfo();
   if (info.usbVendorId === undefined) return '選択済み';
   const hex = (v) => v.toString(16).toUpperCase().padStart(4, '0');
-  return `USB ${hex(info.usbVendorId)}:${hex(info.usbProductId)}`;
+  return `USB ${hex(info.usbVendorId)}:${hex(info.usbProductId)}${usingPolyfill ? ' (WebUSB)' : ''}`;
 }
 
 function setPort(p) {
@@ -157,7 +181,7 @@ function setPort(p) {
 
 async function selectPort() {
   try {
-    setPort(await navigator.serial.requestPort());
+    setPort(await serialApi.requestPort());
     setStatus('ポートを選択しました。');
   } catch (e) {
     if (e.name !== 'NotFoundError') setStatus(`ポート選択エラー: ${e.message}`, 'error');
@@ -218,6 +242,7 @@ async function readDevice() {
       return { pressures, temps, sn };
     });
 
+    result.sn = result.sn || usbSerialNumberOf(port);
     setDeviceSerial(result.sn);
     const snText = result.sn || '取得できませんでした';
     if (result.pressures.length) {
@@ -260,7 +285,7 @@ async function eraseDevice() {
 }
 
 function setBusy(busy) {
-  for (const id of ['btnPort', 'btnRead', 'btnErase']) $(id).disabled = busy || !('serial' in navigator);
+  for (const id of ['btnPort', 'btnRead', 'btnErase']) $(id).disabled = busy || !serialApi;
   document.body.style.cursor = busy ? 'progress' : '';
 }
 
@@ -732,15 +757,25 @@ for (const [input, btn] of [['tempIn', 'btnConvert'], ['refIn', 'btnConvert'], [
   $(input).addEventListener('keydown', (e) => { if (e.key === 'Enter') $(btn).click(); });
 }
 
-if ('serial' in navigator) {
-  // 以前に許可したポートが1つだけなら自動で選択しておく
-  navigator.serial.getPorts().then((ports) => { if (ports.length === 1) setPort(ports[0]); });
-  navigator.serial.addEventListener('disconnect', (e) => {
-    if (e.target === port) { setPort(null); setStatus('デバイスが切断されました。'); }
-  });
-} else {
-  $('unsupported').style.display = 'block';
+setBusy(false);  // 初期化が終わるまではボタンを無効にしておく
+initSerialApi().then(async () => {
   setBusy(false);
-}
+  if (!serialApi) {
+    $('unsupported').style.display = 'block';
+    return;
+  }
+  // 以前に許可したポートが1つだけなら自動で選択しておく
+  const ports = await serialApi.getPorts();
+  if (ports.length === 1) setPort(ports[0]);
+  if (usingPolyfill) {
+    navigator.usb.addEventListener('disconnect', (e) => {
+      if (port && port.device_ === e.device) { setPort(null); setStatus('デバイスが切断されました。'); }
+    });
+  } else {
+    navigator.serial.addEventListener('disconnect', (e) => {
+      if (e.target === port) { setPort(null); setStatus('デバイスが切断されました。'); }
+    });
+  }
+});
 
 updateView();

@@ -11,6 +11,15 @@ KT-ALT 高度ロガーの記録データ（気圧・BMP温度）を USB シリ�
 
 基準気圧（Ref P）は読み出し時に先頭 1 秒間の平均が自動で入ります。
 
+## Android で使う
+
+Android の Chrome では、USB シリアルデバイスを Web Serial API で列挙できない端末が多いため、
+WebUSB 経由で USB CDC-ACM を扱う [web-serial-polyfill](https://github.com/google/web-serial-polyfill)（Google, Apache-2.0。`vendor/` に同梱）を使って通信します。
+
+- ページは HTTPS（GitHub Pages など）で開いてください。Android ではファイルを直接開く方法では動作しません。
+- 「Select Port」を押すと USB デバイスの選択画面が出ます。選択後、Android の「Chrome に USB デバイスへのアクセスを許可しますか」に許可してください。
+- Android では USB ディスクリプタからシリアル番号を直接読むため、ファームウェアの `I` コマンドがなくても S/N が表示されます。
+
 ## 高度換算式
 
 ```
